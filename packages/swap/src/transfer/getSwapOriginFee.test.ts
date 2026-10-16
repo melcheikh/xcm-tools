@@ -17,12 +17,13 @@ import type {
 } from '../types';
 import { getSwapFee } from './fees';
 import { getSwapOriginFee } from './getSwapOriginFee';
-import { getToExchangeOriginFee } from './utils';
+import { getFromExchangeFee, getToExchangeOriginFee } from './utils';
 
 vi.mock('./fees');
 vi.mock('./utils', async (importActual) => ({
   ...(await importActual()),
   getToExchangeOriginFee: vi.fn(),
+  getFromExchangeFee: vi.fn(),
 }));
 
 vi.mock('@paraspell/sdk-core', async (importActual) => ({
@@ -207,6 +208,28 @@ describe('getSwapOriginFee', () => {
       expect(getSwapFee).toHaveBeenCalledWith(dex, options, false);
       expect(getToExchangeOriginFee).not.toHaveBeenCalled();
       expect(result).toEqual(swapFee);
+    });
+
+    it('returns swap fee + destination origin fee when destination differs from exchange and origin is undefined', async () => {
+      const toDestFeeValue = {
+        origin: { fee: 20n, asset: { symbol: 'BAZ' } },
+        destination: { fee: 25n, asset: { symbol: 'BAZ' } },
+        hops: [],
+      };
+      vi.mocked(getFromExchangeFee).mockResolvedValue(toDestFeeValue as never);
+      options.destination = { chain: 'Darwinia' } as unknown as TDestinationInfo;
+
+      const result = await getSwapOriginFee(dex, options, false);
+
+      expect(getSwapFee).toHaveBeenCalledWith(dex, options, false);
+      expect(getFromExchangeFee).toHaveBeenCalledWith(
+        expect.objectContaining({ destination: options.destination }),
+        false,
+      );
+      expect(result).toEqual({
+        ...swapFee,
+        fee: swapFee.fee + toDestFeeValue.origin.fee,
+      });
     });
 
     it('forwards disableFallback flag to underlying calls', async () => {

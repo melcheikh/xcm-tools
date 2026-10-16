@@ -6,6 +6,7 @@ import type { TTransformedOptions } from '../types/TRouter';
 import { getSwapFee } from './fees';
 import {
   createToExchangeBuilder,
+  getFromExchangeFee,
   prepareTransformedOptions,
   validateTransferOptions,
 } from './utils';
@@ -20,7 +21,7 @@ const computeExchangeMinAmount = async <TApi, TRes, TSigner, TCustomChain extend
     TCustomChain
   >,
 ): Promise<bigint> => {
-  const { exchange } = options;
+  const { exchange, destination, sender, api } = options;
 
   const existentialDeposit = getExistentialDeposit(exchange.chain, {
     location: exchange.assetFrom.location,
@@ -33,8 +34,16 @@ const computeExchangeMinAmount = async <TApi, TRes, TSigner, TCustomChain extend
     return existentialDeposit + 1n;
   }
 
-  const { result } = await getSwapFee(dex, options);
-  const swapFee = result.fee ?? 0n;
+  const { result, amountOut } = await getSwapFee(dex, options);
+  let swapFee = result.fee ?? 0n;
+
+  if (destination && destination.chain !== exchange.chain) {
+    const receivingChain = await getFromExchangeFee(
+      { exchange, destination, amount: amountOut, sender, api },
+      false,
+    );
+    swapFee += receivingChain.origin.fee ?? 0n;
+  }
 
   return existentialDeposit + swapFee + 1n;
 };
