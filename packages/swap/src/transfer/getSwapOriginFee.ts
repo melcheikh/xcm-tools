@@ -2,10 +2,9 @@ import type { TXcmFeeDetailWithForwardedXcm } from '@paraspell/sdk-core';
 
 import type ExchangeChain from '../exchanges/ExchangeChain';
 import type { TBuildTransactionsOptions, TTransformedOptions } from '../types';
-import { getSwapFee } from './fees';
+import { getExchangeOriginFee } from './fees';
 import {
   canUseExecuteTransfer,
-  getFromExchangeFee,
   getSwapExecuteOriginXcmFee,
   getToExchangeOriginFee,
   isFilteredError,
@@ -29,7 +28,7 @@ export const getSwapOriginFee = async <
   >,
   disableFallback: TDisableFallback,
 ): Promise<TXcmFeeDetailWithForwardedXcm<TDisableFallback>> => {
-  const { origin, exchange, destination } = options;
+  const { origin, exchange } = options;
 
   if (canUseExecuteTransfer(dex, options)) {
     try {
@@ -42,24 +41,12 @@ export const getSwapOriginFee = async <
 
   validateRoutedFeeAsset(options);
 
-  // Origin chain is upstream from the exchange: fee is the cost of origin -> exchange
+  // Origin chain is upstream from the exchange — fee is the cost of origin -> exchange
   if (origin && origin.chain !== exchange.chain) {
     return getToExchangeOriginFee({ ...options, origin }, disableFallback);
   }
 
-  // Origin chain is the exchange itself: fee is the swap fee (+ destination origin fee if routed to dest)
-  const { result, amountOut } = await getSwapFee(dex, options, disableFallback);
-
-  if (destination && destination.chain !== exchange.chain) {
-    const receivingChain = await getFromExchangeFee(
-      { exchange, destination, amount: amountOut, sender: options.sender, api: options.api },
-      disableFallback,
-    );
-    return {
-      ...result,
-      fee: (result.fee ?? 0n) + (receivingChain.origin.fee ?? 0n),
-    } as TXcmFeeDetailWithForwardedXcm<TDisableFallback>;
-  }
-
+  // Origin chain is the exchange itself — fee is the swap fee (+ outgoing transfer to destination)
+  const result = await getExchangeOriginFee(dex, options, disableFallback);
   return result as TXcmFeeDetailWithForwardedXcm<TDisableFallback>;
 };

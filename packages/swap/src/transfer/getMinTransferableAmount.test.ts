@@ -12,11 +12,10 @@ import type {
   TOriginInfo,
   TTransformedOptions,
 } from '../types';
-import { getSwapFee } from './fees';
+import { getExchangeOriginFee } from './fees';
 import { getMinTransferableAmount } from './getMinTransferableAmount';
 import {
   createToExchangeBuilder,
-  getFromExchangeFee,
   prepareTransformedOptions,
   validateTransferOptions,
 } from './utils';
@@ -151,7 +150,7 @@ describe('getMinTransferableAmount', () => {
       api: mockApi,
     });
     expect(getExistentialDeposit).not.toHaveBeenCalled();
-    expect(getSwapFee).not.toHaveBeenCalled();
+    expect(getExchangeOriginFee).not.toHaveBeenCalled();
     expect(validateTransferOptions).toHaveBeenCalledWith({ ...initialOptions, api: mockApi });
   });
 
@@ -170,7 +169,7 @@ describe('getMinTransferableAmount', () => {
     const result = await getMinTransferableAmount({ ...createOptions(), api: mockApi });
 
     expect(result).toBe(43n);
-    expect(getSwapFee).not.toHaveBeenCalled();
+    expect(getExchangeOriginFee).not.toHaveBeenCalled();
   });
 
   it('adds swap fee when asset is native', async () => {
@@ -189,49 +188,11 @@ describe('getMinTransferableAmount', () => {
       feeType: 'dryRun',
       asset: createAssetInfo('HDX'),
     };
-    vi.mocked(getSwapFee).mockResolvedValue({ result: swapDetail, amountOut: 0n });
+    vi.mocked(getExchangeOriginFee).mockResolvedValue(swapDetail);
 
     const result = await getMinTransferableAmount({ ...createOptions(), api: mockApi });
 
-    expect(getSwapFee).toHaveBeenCalledTimes(1);
+    expect(getExchangeOriginFee).toHaveBeenCalledTimes(1);
     expect(result).toBe(31n);
-  });
-
-  it('adds destination origin fee when destination differs from exchange and asset is native', async () => {
-    vi.mocked(prepareTransformedOptions).mockResolvedValue({
-      dex: createExchangeChainStub(),
-      options: createTransformedOptions({
-        origin: undefined,
-        destination: { chain: 'Darwinia', address: 'recipient' },
-        exchange: createExchangeInfo('HDX'),
-      }),
-    });
-
-    vi.mocked(getExistentialDeposit).mockReturnValue(10n);
-    vi.mocked(getNativeAssetSymbol).mockReturnValue('HDX');
-    const swapDetail: TXcmFeeDetail = {
-      fee: 20n,
-      feeType: 'dryRun',
-      asset: createAssetInfo('HDX'),
-    };
-    vi.mocked(getSwapFee).mockResolvedValue({ result: swapDetail, amountOut: 500n });
-    vi.mocked(getFromExchangeFee).mockResolvedValue({
-      origin: { fee: 5n, asset: { symbol: 'HDX' } },
-      destination: { fee: 2n, asset: { symbol: 'GLMR' } },
-      hops: [],
-    } as never);
-
-    const result = await getMinTransferableAmount({
-      ...createOptions({ from: undefined, to: 'Darwinia' }),
-      api: mockApi,
-    });
-
-    // 10n (ED) + 20n (swapFee) + 5n (toDest origin fee) + 1n = 36n
-    expect(result).toBe(36n);
-    expect(getSwapFee).toHaveBeenCalledTimes(1);
-    expect(getFromExchangeFee).toHaveBeenCalledWith(
-      expect.objectContaining({ destination: { chain: 'Darwinia', address: 'recipient' } }),
-      false,
-    );
   });
 });
